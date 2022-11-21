@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Exit on all errors
+set -e
+
+do_export () {
+    # Export from BigIP using iControl REST api from python
+    # This builds a skeleton terraform file called all.tf
+    # which can be used to do import commands from
+    if [ ! -f login.json ] ; then
+        cat <<EOF >&2
+There is no login details.  Please provide login.json:
+
+---
+{
+    "bigip": "172.16.17.18",
+    "user": "someuser",
+    "password": "the-password"
+}
+---
+
+The user may be a read only user (audit user).
+
+EOF
+        exit 1
+    fi
+    
+    echo "** Dumping all VIPs, used pools and used nodes"
+
+    ./dump.py "$@" >import.tf
+}
+
+
+do_import () {
+    # After the skeleton all.tf has been generated we can run the
+    # terraform commands to populate the state file and then use
+    # "terraform show" to generate a new all.tf with actual resource
+    # definitions
+    cp import.tf terraformer
+    cd terraformer
+    echo "** Doing a terraform import"
+
+    if [ ! -f secrets.tf ] ; then
+        echo "No secrets.tf provided.  Seeding from login.json"
+        cat <<EOF >secrets.tf
+variable "hostname" { default = $(jq .bigip ../login.json) }
+variable "username" { default = $(jq .user ../login.json) }
+variable "password" { default = $(jq .password ../login.json) }
+EOF
+    else
+        echo "There is already a secrets.tf here. Using."
+    fi
+
+    # Only apropriate to remove state if starting from scratch
+    # echo "Clearing and initializing terraform"
+    # rm .terraform* terraform.tfstate*
+
+    terraform init
+
+    # This issues one terraform command pr. resource
+    <import.tf grep '#import#' | cut -d' ' -f2- | bash -e
+
+    terraform show -no-color | grep -vw id >../new.tf
+
+    if [ -f resources.tf ] ; then
+        (echo "# Imported $(date)"; echo; cat ../new.tf) >> resources.tf
+    else
+        mv ../new.tf resources.tf
+    fi
+
+    echo
+    echo "** Done"
+    echo
+    echo "Newly imported resources are found in terraformer/resources.tf"
+}
+
+
+do_export "$@"
+do_import
