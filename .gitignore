@@ -95,9 +95,13 @@ dmypy.json
 # Project specific
 login.json
 terraformer/secrets.tf
-all.tf
+import.tf
+import.sh
+terraform.tfstate*
+.terraform*
 
 # Some emacs
+.emacs*
 *~
 #*
 .#*
