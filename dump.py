@@ -20,10 +20,11 @@ NOTE: I assume this will break on IPv6.
 '''
 
 import re
+import sys
 import json
+import getopt
 from pprint import pprint
 from f5.bigip import ManagementRoot
-
 
 def printAttr(object, lead, attr):
     '''Print the attribute of object in terraform format if it exists'''
@@ -31,14 +32,21 @@ def printAttr(object, lead, attr):
     if hasattr(object, attr):
         value = eval(f"object.{attr}")
         if type(value) is list:
-            print(f"  {lead:18s} = {value}")
+            print(f"  {lead:10s} = {value}")
         else:
-            print(f"  {lead:18s} = \"{value}\"")
+            print(f"  {lead:10s} = \"{value}\"")
 
 def terrify(name):
-    '''Make a name terraform compliant by tr/[A-Z]-/[a-z]_/'''
+    '''Make a name terraform compliant identifier'''
     name=name.lower()
-    return re.sub(r'[-/:]', '_', name)
+    # Replace illegal chars with _
+    name=re.sub(r'[^-a-zA-Z0-9_]', '_', name)
+    # Add a leading x if the name starts in something non-alpha
+    if re.match(r'^[^a-zA-Z]', name):
+        return "x" + name
+
+    return name
+
 
 # Chat with BigIP 
 
@@ -53,7 +61,8 @@ def login():
     return ManagementRoot(bigip, username, password)
 
 
-def process_vips(vips):
+def process_vips(vips,filter):
+    print("* Processing VIPs", file=sys.stderr)
     used_pools = {}
     for vip in vips:
         tname=terrify(vip.name)
@@ -61,11 +70,11 @@ def process_vips(vips):
         printAttr(vip,"name","fullPath")
         if hasattr(vip, 'pool'):
             used_pools[vip.pool] = True
-            print("}")
-            print()
+        print("}")
+        print()
 
-            print(f"#import# terraform import bigip_ltm_virtual_server.{tname} {vip.fullPath}")
-            print()
+        print(f"#import# terraform import bigip_ltm_virtual_server.{tname} {vip.fullPath}")
+        print()
 
     return used_pools
 
@@ -73,6 +82,8 @@ def process_vips(vips):
 def process_pools(pools, used_pools):
     '''Get a list of all pools on the BigIP and print their names and their
     members' names.'''
+
+    print("* Processing pools", file=sys.stderr)
 
     members = {}
 
@@ -102,30 +113,9 @@ def process_pools(pools, used_pools):
 
 def process_members(members):
     '''From the pools we collected all the pool members. Now they need to
-    be defined and also need to define the attachment of nodes to pools.
+    be defined and also need to define the attachment of nodes to pools.'''
 
-    Each member looks like this:
-    {'address': '10.1.1.1',
-     'connectionLimit': 0,
-     'dynamicRatio': 1,
-     'ephemeral': 'false',
-     'fqdn': {'autopopulate': 'disabled'},
-     'fullPath': '/Common/some-server:80',
-     'generation': 1,
-     'inheritProfile': 'enabled',
-     'kind': 'tm:ltm:pool:members:membersstate',
-     'logging': 'disabled',
-     'monitor': 'default',
-     'name': 'some-server:80',
-     'partition': 'Common',
-     'priorityGroup': 0,
-     'rateLimit': 'disabled',
-     'ratio': 1,
-     'slfLink': 'https://localhost/mgmt/tm/ltm/pool/~Common~server_core/members/~Common~some-server:80?ver=15.1.8',
-     'session': 'monitor-enabled',
-     'state': 'up'}
-
-    '''
+    print("* Processing nodes", file=sys.stderr)
 
     nodes_done = {}
 
@@ -142,10 +132,17 @@ def process_members(members):
         for nodek in members[pool].keys():
             node = members[pool][nodek]
             
-            tname = terrify(node.name)
             # Just the nodename, with no port
             just_node = no_port.match(node.name).group()
             node_path = no_port.match(node.fullPath).group()
+
+            tname = terrify(just_node)
+
+            if tname == 'x' or tname == '':
+                print("FATAL! I have no name for this node", file=sys.stderr)
+                print(f"just_node: {just_node} path: {node_path}", file=sys.stderr)
+                print(node.attrs, file=sys.stderr)
+                exit(1)
 
             pool_members[pool].append(node.fullPath)
 
@@ -154,14 +151,15 @@ def process_members(members):
                 continue
 
             nodes_done[just_node] = True
+            
 
             thisNode = members[pool][nodek]
         
-            print(f"resource \"bigip_ltm_node\" \"{just_node}\" {{")
+            print(f"resource \"bigip_ltm_node\" \"{tname}\" {{")
             printAttr(thisNode,"name","fullPath")
             print("}")
             print()
-            print(f"#import# terraform import bigip_ltm_node.{just_node} {node_path}")
+            print(f"#import# terraform import bigip_ltm_node.{tname} {node_path}")
             print()
 
     return pool_members
@@ -170,6 +168,8 @@ def process_members(members):
 def process_attachments(pools, used_pools, pool_members):
     '''From a dictionary of pools attach the nodes that are members of
     each pool.'''
+
+    print("* Attaching nodes to pools", file=sys.stderr)
 
     for pool in pools:
         if not used_pools.get(pool.fullPath):
@@ -188,12 +188,26 @@ def process_attachments(pools, used_pools, pool_members):
 
 
 def main():
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "v:c", ["vip=","clear"])
+    except getopt.GetoptError as err:
+        print(err)
+        usage()
+        exit(2)
+
+    only_vip = ''
+
+    for o, a in opts:
+        if o == '-v':
+            only_vip = a
+        if o == '-c':
+            only_vip = ''
+            # noop for us
+    
     mgmt = login()
 
-    # used_pools = process_vips(mgmt.tm.ltm.virtuals.get_collection())
+    used_pools = process_vips(mgmt.tm.ltm.virtuals.get_collection(), only_vip)
     
-    used_pools={'/Common/varnish_core': True}
-
     all_pools = mgmt.tm.ltm.pools.get_collection()
     
     members = process_pools(all_pools, used_pools)
