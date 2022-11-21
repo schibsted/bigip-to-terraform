@@ -38,7 +38,7 @@ def printAttr(object, lead, attr):
 def terrify(name):
     '''Make a name terraform compliant by tr/[A-Z]-/[a-z]_/'''
     name=name.lower()
-    return re.sub(r'-', '_', name)
+    return re.sub(r'[-/:]', '_', name)
 
 # Chat with BigIP 
 
@@ -142,13 +142,12 @@ def process_members(members):
         for nodek in members[pool].keys():
             node = members[pool][nodek]
             
-            pool_members[pool].append(node.fullPath)
-
             tname = terrify(node.name)
             # Just the nodename, with no port
             just_node = no_port.match(node.name).group()
             node_path = no_port.match(node.fullPath).group()
 
+            pool_members[pool].append(node.fullPath)
 
             if nodes_done.get(just_node):
                 # If this node has already been seen don't print it again
@@ -168,20 +167,41 @@ def process_members(members):
     return pool_members
 
 
+def process_attachments(pools, used_pools, pool_members):
+    '''From a dictionary of pools attach the nodes that are members of
+    each pool.'''
+
+    for pool in pools:
+        if not used_pools.get(pool.fullPath):
+            continue
+
+        for node in pool_members[pool.fullPath]:
+            tname = terrify(pool.name + node)
+
+            print(f"resource \"bigip_ltm_pool_attachment\" \"{tname}\" {{")
+            printAttr(pool, "pool", "fullPath")
+            print("}")
+            print()
+            print(f"#import# terraform import bigip_ltm_pool_attachment.{tname}"
+                  f" '{{\"pool\": \"{pool.fullPath}\", \"node\": \"{node}\"}}'")
+            print()
+
+
 def main():
     mgmt = login()
 
     # used_pools = process_vips(mgmt.tm.ltm.virtuals.get_collection())
     
     used_pools={'/Common/varnish_core': True}
+
+    all_pools = mgmt.tm.ltm.pools.get_collection()
     
-    members = process_pools(mgmt.tm.ltm.pools.get_collection(), used_pools)
+    members = process_pools(all_pools, used_pools)
 
     pool_members = process_members(members)
 
-    pprint(pool_members)
+    process_attachments(all_pools, used_pools, pool_members)
 
-    # process_attachments(pool_members)
 
 
 main()
