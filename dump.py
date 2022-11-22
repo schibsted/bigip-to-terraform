@@ -89,6 +89,8 @@ def process_pools(pools, used_pools):
 
     for pool in pools:
         if not used_pools.get(pool.fullPath):
+            print(f"# Pool not referenced: {pool.fullPath}")
+            print()
             continue
         
         tname = terrify(pool.name)
@@ -146,12 +148,11 @@ def process_members(members):
 
             pool_members[pool].append(node.fullPath)
 
-            if nodes_done.get(just_node):
+            if nodes_done.get(node_path):
                 # If this node has already been seen don't print it again
                 continue
 
-            nodes_done[just_node] = True
-            
+            nodes_done[node_path] = True
 
             thisNode = members[pool][nodek]
         
@@ -162,7 +163,7 @@ def process_members(members):
             print(f"#import# terraform import bigip_ltm_node.{tname} {node_path}")
             print()
 
-    return pool_members
+    return pool_members, nodes_done
 
 
 def process_attachments(pools, used_pools, pool_members):
@@ -170,6 +171,8 @@ def process_attachments(pools, used_pools, pool_members):
     each pool.'''
 
     print("* Attaching nodes to pools", file=sys.stderr)
+
+    node_used = {}
 
     for pool in pools:
         if not used_pools.get(pool.fullPath):
@@ -185,6 +188,17 @@ def process_attachments(pools, used_pools, pool_members):
             print(f"#import# terraform import bigip_ltm_pool_attachment.{tname}"
                   f" '{{\"pool\": \"{pool.fullPath}\", \"node\": \"{node}\"}}'")
             print()
+
+
+def list_unused_nodes(used, all):
+    '''In the end list the nodes that are not referenced by any used pools'''
+
+    for node in all:
+        if used.get(node.fullPath):
+            # Node was used in config
+            continue
+
+        print(f"# Node not referenced: {node.fullPath}");
 
 
 def main():
@@ -212,10 +226,13 @@ def main():
     
     members = process_pools(all_pools, used_pools)
 
-    pool_members = process_members(members)
+    pool_members, nodes_used = process_members(members)
 
     process_attachments(all_pools, used_pools, pool_members)
 
+    all_nodes = mgmt.tm.ltm.nodes.get_collection()
+
+    list_unused_nodes(nodes_used, all_nodes)
 
 
 main()
