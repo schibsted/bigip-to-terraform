@@ -9,7 +9,7 @@ do_export () {
     # which can be used to do import commands from
     if [ ! -f login.json ] ; then
         cat <<EOF >&2
-There is no login details.  Please provide login.json:
+There are no login details.  Please provide login.json:
 
 ---
 {
@@ -41,7 +41,7 @@ do_import () {
     echo "** Doing a terraform import"
 
     if [ ! -f secrets.tf ] ; then
-        echo "No secrets.tf provided.  Seeding from login.json"
+        echo "* No secrets.tf provided.  Seeding from login.json"
         cat <<EOF >secrets.tf
 variable "hostname" { default = $(jq .bigip ../login.json) }
 variable "username" { default = $(jq .user ../login.json) }
@@ -70,8 +70,7 @@ EOF
 
     echo
     echo "** Done"
-    echo
-    echo "Newly imported resources are found in terraformer/resources.tf"
+    echo "* Newly imported resources are found in terraformer/resources.tf"
 }
 
 
