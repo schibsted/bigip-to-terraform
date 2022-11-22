@@ -37,8 +37,12 @@ do_import () {
     # "terraform show" to generate a new all.tf with actual resource
     # definitions
     cp import.tf terraformer
+    newname=import-$(date '+%F-%R').tf
+    mv import.tf $newname
+    
     cd terraformer
-    echo "** Doing a terraform import"
+
+    echo "** Initializing for terraform import"
 
     if [ ! -f secrets.tf ] ; then
         echo "* No secrets.tf provided.  Seeding from login.json"
@@ -48,14 +52,16 @@ variable "username" { default = $(jq .user ../login.json) }
 variable "password" { default = $(jq .password ../login.json) }
 EOF
     else
-        echo "There is already a secrets.tf here. Using."
+        echo "* There is already a secrets.tf here. Using."
     fi
 
     # Only apropriate to remove state if starting from scratch
-    # echo "Clearing and initializing terraform"
-    # rm .terraform* terraform.tfstate*
+    echo "* Clearing and initializing terraform"
+    rm -rf .terraform* terraform.tfstate*
 
     terraform init
+
+    echo "** Doing a terraform import"
 
     # This issues one terraform command pr. resource
     <import.tf grep '#import#' | cut -d' ' -f2- | bash -e
@@ -67,10 +73,16 @@ EOF
     else
         mv ../new.tf resources.tf
     fi
+    rm import.tf
+
+    cd ..
 
     echo
     echo "** Done"
     echo "* Newly imported resources are found in terraformer/resources.tf"
+    echo "* The skeleton terraform file is in ./$newname"
+    echo "    In this file you can find lists of unreferenced resources if"
+    echo "    you would like to remove them from your BigIP."
 }
 
 
