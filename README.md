@@ -4,7 +4,8 @@ Dump F5 configuration to terraform format
 
 ## Installing requirements
 
-You will need Python 3 and pip.
+You will need Python 3 and pip.  And also terraform, at least version
+0.13 from what I can see.
 
 ```
 pip install -r requirements.txt
