@@ -96,6 +96,8 @@ dmypy.json
 login.json
 terraformer/secrets.tf
 import.tf
+import-*.tf
+unref-*.tf
 import.sh
 terraform.tfstate*
 .terraform*
