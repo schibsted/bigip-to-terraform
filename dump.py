@@ -26,6 +26,11 @@ import getopt
 from pprint import pprint
 from f5.bigip import ManagementRoot
 
+# These relate to user options and change script behaviour
+only_vip = ''
+make_resources = True
+show_unref = True
+
 def printAttr(object, lead, attr):
     '''Print the attribute of object in terraform format if it exists'''
 
@@ -61,22 +66,58 @@ def login():
     return ManagementRoot(bigip, username, password)
 
 
-def process_vips(vips,filter):
-    print("* Processing VIPs", file=sys.stderr)
-    used_pools = {}
-    for vip in vips:
+def print_vip(vip):
+    global make_resources
+
+    if make_resources:
         tname=terrify(vip.name)
+        print()
         print(f"resource \"bigip_ltm_virtual_server\" \"{tname}\" {{")
         printAttr(vip,"name","fullPath")
-        if hasattr(vip, 'pool'):
-            used_pools[vip.pool] = True
         print("}")
         print()
 
         print(f"#import# terraform import bigip_ltm_virtual_server.{tname} {vip.fullPath}")
         print()
 
+
+def process_vips(vips):
+    global only_vip
+
+    print("* Processing VIPs", file=sys.stderr)
+    used_pools = {}
+    for vip in vips:
+        # If there is a VIP filter find out if it matches.
+        if only_vip:
+            if type(only_vip) is re.Pattern:
+                if not (only_vip.search(vip.fullPath) or
+                        only_vip.search(vip.name) or
+                        only_vip.search(vip.destination)):
+                   continue
+            elif type(only_vip) is str:
+                if not (vip.fullPath.find(only_vip) > 0 or
+                        vip.name.find(only_vip or
+                        vip.destination.find(only_vip)) > 0):
+                    continue
+
+        if hasattr(vip, 'pool'):
+            used_pools[vip.pool] = True
+        print_vip(vip)
+
     return used_pools
+
+
+def print_pool(pool):
+    global make_resources
+
+    if make_resources:
+        tname = terrify(pool.name)
+        print(f"resource \"bigip_ltm_pool\" \"{tname}\" {{")
+        printAttr(pool,"name","fullPath")
+        print("}")
+        print()
+        print(f"#import# terraform import bigip_ltm_pool.{tname} {pool.fullPath}")
+        print()
 
 
 def process_pools(pools, used_pools):
@@ -89,17 +130,13 @@ def process_pools(pools, used_pools):
 
     for pool in pools:
         if not used_pools.get(pool.fullPath):
-            print(f"# Pool not referenced: {pool.fullPath}")
-            print()
+            if show_unref:
+                print(f"# Pool not referenced: {pool.fullPath}")
+                print()
+
             continue
-        
-        tname = terrify(pool.name)
-        print(f"resource \"bigip_ltm_pool\" \"{tname}\" {{")
-        printAttr(pool,"name","fullPath")
-        print("}")
-        print()
-        print(f"#import# terraform import bigip_ltm_pool.{tname} {pool.fullPath}")
-        print()
+
+        print_pool(pool)
 
         members[pool.fullPath] = {}
 
@@ -111,6 +148,20 @@ def process_pools(pools, used_pools):
             members[pool.fullPath][member.selfLink] = member
 
     return members
+
+
+def print_node(node, name, path):
+    global make_resources
+
+    if make_resources:
+        tname = terrify(name)
+
+        print(f"resource \"bigip_ltm_node\" \"{tname}\" {{")
+        printAttr(node,"name","fullPath")
+        print("}")
+        print()
+        print(f"#import# terraform import bigip_ltm_node.{tname} {path}")
+        print()
 
 
 def process_members(members):
@@ -138,30 +189,16 @@ def process_members(members):
             just_node = no_port.match(node.name).group()
             node_path = no_port.match(node.fullPath).group()
 
-            tname = terrify(just_node)
-
-            if tname == 'x' or tname == '':
-                print("FATAL! I have no name for this node", file=sys.stderr)
-                print(f"just_node: {just_node} path: {node_path}", file=sys.stderr)
-                print(node.attrs, file=sys.stderr)
-                exit(1)
-
-            pool_members[pool].append(node.fullPath)
-
             if nodes_done.get(node_path):
                 # If this node has already been seen don't print it again
                 continue
 
+            pool_members[pool].append(node.fullPath)
+
             nodes_done[node_path] = True
 
-            thisNode = members[pool][nodek]
-        
-            print(f"resource \"bigip_ltm_node\" \"{tname}\" {{")
-            printAttr(thisNode,"name","fullPath")
-            print("}")
-            print()
-            print(f"#import# terraform import bigip_ltm_node.{tname} {node_path}")
-            print()
+            print_node(members[pool][nodek], just_node, node_path)
+
 
     return pool_members, nodes_done
 
@@ -169,6 +206,8 @@ def process_members(members):
 def process_attachments(pools, used_pools, pool_members):
     '''From a dictionary of pools attach the nodes that are members of
     each pool.'''
+
+    global make_resources
 
     print("* Attaching nodes to pools", file=sys.stderr)
 
@@ -181,13 +220,14 @@ def process_attachments(pools, used_pools, pool_members):
         for node in pool_members[pool.fullPath]:
             tname = terrify(pool.name + node)
 
-            print(f"resource \"bigip_ltm_pool_attachment\" \"{tname}\" {{")
-            printAttr(pool, "pool", "fullPath")
-            print("}")
-            print()
-            print(f"#import# terraform import bigip_ltm_pool_attachment.{tname}"
-                  f" '{{\"pool\": \"{pool.fullPath}\", \"node\": \"{node}\"}}'")
-            print()
+            if make_resources:
+                print(f"resource \"bigip_ltm_pool_attachment\" \"{tname}\" {{")
+                printAttr(pool, "pool", "fullPath")
+                print("}")
+                print()
+                print(f"#import# terraform import bigip_ltm_pool_attachment.{tname}"
+                      f" '{{\"pool\": \"{pool.fullPath}\", \"node\": \"{node}\"}}'")
+                print()
 
 
 def list_unused_nodes(used, all):
@@ -198,40 +238,55 @@ def list_unused_nodes(used, all):
             # Node was used in config
             continue
 
-        print(f"# Node not referenced: {node.fullPath}");
+        if show_unref:
+            print(f"# Node not referenced: {node.fullPath}");
+
+
+def process_vip_filter(filter):
+    '''Figure out if it's a regex or just a substring'''
+    if filter[0] == '/':
+        # It's a regular expression, strip the surounding // and use it
+        return re.compile(filter[1:-1])
+
+    return filter
 
 
 def main():
+    global only_vip
+    global make_resources
+    global show_unref
+
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "v:c", ["vip=","clear"])
+        opts, args = getopt.getopt(sys.argv[1:], "v:cu",
+                                   ["vip=", "clear", "unreferenced"])
     except getopt.GetoptError as err:
         print(err)
         usage()
         exit(2)
 
-    only_vip = ''
-
     for o, a in opts:
         if o == '-v':
-            only_vip = a
+            only_vip = process_vip_filter(a)
+            show_unref = False
         if o == '-c':
-            only_vip = ''
             # noop for us
-    
+            True
+        if o == '-u':
+            make_resources = False
+
+    if not show_unref and not make_resources:
+        print("Nothing to do!", file=sys.stderr)
+        usage()
+        exit(2)
+
     mgmt = login()
 
-    used_pools = process_vips(mgmt.tm.ltm.virtuals.get_collection(), only_vip)
-    
+    used_pools = process_vips(mgmt.tm.ltm.virtuals.get_collection())
     all_pools = mgmt.tm.ltm.pools.get_collection()
-    
     members = process_pools(all_pools, used_pools)
-
     pool_members, nodes_used = process_members(members)
-
     process_attachments(all_pools, used_pools, pool_members)
-
     all_nodes = mgmt.tm.ltm.nodes.get_collection()
-
     list_unused_nodes(nodes_used, all_nodes)
 
 

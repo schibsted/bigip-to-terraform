@@ -1,7 +1,17 @@
 #!/bin/bash
 
-# Exit on all errors
-set -e
+usage () {
+    if [ -f README.md ] ; then
+        exec >&2
+        echo
+        echo "USAGE:"
+        sed '/## Usage/,/##/!d; /##/d' README.md
+    else
+        echo "Please see README.md for usage" >&2
+    fi
+    exit 1
+}
+
 
 do_export () {
     # Export from BigIP using iControl REST api from python
@@ -36,7 +46,7 @@ do_import () {
     # terraform commands to populate the state file and then use
     # "terraform show" to generate a new all.tf with actual resource
     # definitions
-    cp import.tf terraformer
+    cp -v import.tf terraformer
     newname=import-$(date '+%F-%R').tf
     mv import.tf $newname
     
@@ -55,10 +65,13 @@ EOF
         echo "* There is already a secrets.tf here. Using."
     fi
 
-    # Only apropriate to remove state if starting from scratch
-    echo "* Clearing and initializing terraform"
-    rm -rf .terraform* terraform.tfstate*
+    if [ $clear == yes ] ; then
+        # Only apropriate to remove state if starting from scratch
+        echo "* Clearing terraform state and resources"
+        rm -rf .terraform* terraform.tfstate* resources.tf
+    fi
 
+    echo "* Initializing terraform"
     terraform init
 
     echo "** Doing a terraform import"
@@ -68,11 +81,10 @@ EOF
 
     terraform show -no-color | grep -vw id >../new.tf
 
-    if [ -f resources.tf ] ; then
-        (echo "# Imported $(date)"; echo; cat ../new.tf) >> resources.tf
-    else
-        mv ../new.tf resources.tf
+    if [ ! -f resources.tf ] ; then
+        : > resources.tf
     fi
+    (echo "# Imported $(date)"; echo; cat ../new.tf) >> resources.tf
     rm import.tf
 
     cd ..
@@ -85,6 +97,33 @@ EOF
     echo "    you would like to remove them from your BigIP."
 }
 
+# Option defaults
+clear=yes
+undefs_only=''
+
+while getopts "v:uch" opt; do
+    case $opt in
+        v) clear=0
+           undefs_only=''
+           ;;
+        u) undefs_only='yes';;
+        c) clear=yes;;
+        h) usage;;
+        *) usage;;
+    esac
+done
+
+# Exit on all errors from now on
+set -e
 
 do_export "$@"
-do_import
+
+if [ -z $undefs_only ] ; then
+    do_import
+else
+    newname="unref-$(date '+%F-%R').tf"
+    mv import.tf $newname
+    echo
+    echo "** Done"
+    echo "* List of unreferenced resources is in $newname"
+fi
