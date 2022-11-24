@@ -88,5 +88,3 @@ config.
 If you grep for "not referenced" in the `importer-<time-date>.tf` file
 you will get a list of pools and nodes that are not in use.  You can
 delete these from your BigIP if you like.
-
-
