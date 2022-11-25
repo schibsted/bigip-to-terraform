@@ -68,7 +68,7 @@ EOF
     if [ $clear == yes ] ; then
         # Only apropriate to remove state if starting from scratch
         echo "* Clearing terraform state and resources"
-        rm -rf .terraform* terraform.tfstate* resources.tf
+        rm -rf .terraform* terraform.tfstate* resources.tf*
     fi
 
     echo "* Initializing terraform"
@@ -77,14 +77,17 @@ EOF
     echo "** Doing a terraform import"
 
     # This issues one terraform command pr. resource
-    <import.tf grep '#import#' | cut -d' ' -f2- | bash -e
-
+    <import.tf grep '^#import#' | cut -d' ' -f2- | bash -e
+    <import.tf grep "^#sed#"    | cut -d' ' -f2- > new.sed
     terraform show -no-color | grep -vw id >../new.tf
+
+    sed -i.bak -f new.sed ../new.tf
+    rm new.sed
 
     if [ ! -f resources.tf ] ; then
         : > resources.tf
     fi
-    (echo "# Imported $(date)"; echo; cat ../new.tf) >> resources.tf
+    (echo "# Imported $only_vip $(date)"; echo; cat ../new.tf) >> resources.tf
     rm import.tf
 
     cd ..
@@ -99,19 +102,26 @@ EOF
 
 # Option defaults
 clear=yes
+really_clear=''
 undefs_only=''
+only_vip="complete config"
 
 while getopts "v:uch" opt; do
     case $opt in
-        v) clear=0
+        v) clear=''
            undefs_only=''
+           only_vip="with filter $OPTARG"
            ;;
         u) undefs_only='yes';;
-        c) clear=yes;;
+        c) really_clear=yes;;
         h) usage;;
         *) usage;;
     esac
 done
+
+if [ "$really_clear" = "yes" ] ; then
+    clear=yes
+fi
 
 # Exit on all errors from now on
 set -e
