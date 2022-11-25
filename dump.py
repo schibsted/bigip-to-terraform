@@ -117,6 +117,7 @@ def print_pool(pool):
         print("}")
         print()
         print(f"#import# terraform import bigip_ltm_pool.{tname} {pool.fullPath}")
+        print(f"#sed# /pool/ s~\"{pool.fullPath}\"~resource.bigip_ltm_pool.{tname}.name~;")
         print()
 
 
@@ -161,6 +162,7 @@ def print_node(node, name, path):
         print("}")
         print()
         print(f"#import# terraform import bigip_ltm_node.{tname} {path}")
+        print(f"#sed# /node/ s~\"{path}:~\"${{resource.bigip_ltm_node.{tname}.name}}:~;")
         print()
 
 
@@ -189,16 +191,19 @@ def process_members(members):
             just_node = no_port.match(node.name).group()
             node_path = no_port.match(node.fullPath).group()
 
+            # print(f"Going to print {node.fullPath} {node_path} ?", file=sys.stderr)
+
             if nodes_done.get(node_path):
+                # print("not", file=sys.stderr)
                 # If this node has already been seen don't print it again
                 continue
 
             pool_members[pool].append(node.fullPath)
 
             nodes_done[node_path] = True
+            # print("now done:",nodes_done, file=sys.stderr)
 
             print_node(members[pool][nodek], just_node, node_path)
-
 
     return pool_members, nodes_done
 
