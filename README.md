@@ -1,4 +1,4 @@
-# bigip-2-terraform
+# bigip-to-terraform
 
 Transform running F5 BigIP config into Terraform resources.
 
