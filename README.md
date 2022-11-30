@@ -1,6 +1,13 @@
-# f5-2-terraform
+# bigip-2-terraform
 
 Transform running F5 BigIP config into Terraform resources.
+
+(C) 2022 Nicolai Langfeldt nicolai.langfeldt@schibsted.com.  This code
+is developed on Schibsteds time and dime.
+
+This is Open Source with a Apache2 license.  See COPYING.md
+
+Contributions welcome: please make a PR.
 
 ## Usage
 
