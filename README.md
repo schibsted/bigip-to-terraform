@@ -40,8 +40,11 @@ of the resources will be ungraciously aborted mid stream.
 
 ## Installing requirements
 
-You will need Python 3 and pip.  And also terraform, at least version
-0.13 from what I can see.
+You will need
+- Python 3
+- pip
+- terraform, at least version 0.13 from what I can see
+- jq
 
 ```
 pip install -r requirements.txt
