@@ -117,7 +117,7 @@ def print_pool(pool):
         print("}")
         print()
         print(f"#import# terraform import bigip_ltm_pool.{tname} {pool.fullPath}")
-        print(f"#sed# /pool/ s~\"{pool.fullPath}\"~resource.bigip_ltm_pool.{tname}.name~;")
+        print(f"#sed# /pool[	 ]\+=/ s~\"{pool.fullPath}\"~resource.bigip_ltm_pool.{tname}.name~;")
         print()
 
 
@@ -162,7 +162,7 @@ def print_node(node, name, path):
         print("}")
         print()
         print(f"#import# terraform import bigip_ltm_node.{tname} {path}")
-        print(f"#sed# /node/ s~\"{path}:~\"${{resource.bigip_ltm_node.{tname}.name}}:~;")
+        print(f"#sed# /node[	 ]\+=/ s~\"{path}:~\"${{resource.bigip_ltm_node.{tname}.name}}:~;")
         print()
 
 
