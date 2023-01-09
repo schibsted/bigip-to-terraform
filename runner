@@ -65,7 +65,7 @@ EOF
         echo "* There is already a secrets.tf here. Using."
     fi
 
-    if [ $clear == yes ] ; then
+    if [ "$clear" = yes ] ; then
         # Only apropriate to remove state if starting from scratch
         echo "* Clearing terraform state and resources"
         rm -rf .terraform* terraform.tfstate* resources.tf*
