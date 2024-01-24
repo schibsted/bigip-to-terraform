@@ -48,8 +48,17 @@ You will need
 
 ```
 pip install -r requirements.txt
+```
+
+If your pip is quarrelsome about "This environment is externally
+managed" you might or might not want to run
 
 ```
+pip install --break-system-packages -r requirements.txt
+```
+
+If you decide to install using a venv you might need to make other
+changes as well.
 
 ## Restrictions
 
